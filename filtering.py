@@ -11,9 +11,9 @@ def concatenate_raws(subj, dtype):
     for file in glob.glob(f'{data_dir}/{subj}/*{dtype}*.fif'):
         print(file)
         raws.append(mne.io.read_raw_fif(file, preload=True))
-        if raws:  # Check if raws is not empty
-            raw = mne.concatenate_raws(raws)
-    raw.filter(1, 40, method='iir')
+    if raws:  # Check if raws is not empty
+        raw = mne.concatenate_raws(raws)
+        raw.filter(1, 40, method='iir')
     return raw
     
 
@@ -48,12 +48,13 @@ def ica_denoising(subj):
     input('press enter to see topos...')
     ica.plot_components()
     print('excluding:', ica.exclude)
-    return ica.exclude
+    return ica
 
 def apply_ica(subj):
-    exclude = ica_denoising(subj)
     ica = ica_denoising(subj)
-    raw = ica.apply(raw, exclude=ica.exclude)
+    # ica = ica_denoising(subj)
+    raw = ica.apply(raw, exclude = ica.exclude)
+    raw.save(f'{save_dir}/{subj}_{dtype}.fif', overwrite=True)
     return raw
 
 if __name__ == '__main__':
