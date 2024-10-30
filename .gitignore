@@ -1,0 +1,4 @@
+data_meg/
+data_log/
+__pycache__/
+.DS_Store
