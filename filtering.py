@@ -2,8 +2,8 @@ import glob
 import os
 import mne
 
-data_dir = '/Users/dorisyu/meg_decoding/data_processed'
-save_dir = '/Users/dorisyu/meg_decoding/data_processed'
+data_dir = 'data_meg'
+save_dir = 'data_meg'
 raws = []
 subj = "R2210"
 dtype = "raw"
