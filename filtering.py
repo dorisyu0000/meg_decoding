@@ -50,28 +50,28 @@ def ica_denoising(subj):
     ica.plot_components()
     print('excluding:', ica.exclude)
     raw = ica.apply(raw, exclude = ica.exclude)
-    raw.save(f'{save_dir}/{subj}_{dtype}.fif', overwrite=True)
+    raw.save(f'{save_dir}/{subj}_{dtype}_ica.fif', overwrite=True)
     return raw
 
 
-def epoch_data(subj,raw):
-    raw = preprocess_raws(subj)
-    events = mne.find_events(raw, stim_channel='STI 014', output='onset', shortest_event=1)
-    event_id = {
-        'start': 1,
-        'move': 2,
-        'reveal_red': 4,
-        'reveal_white': 8,
-        'done': 16,
-    }
-    epochs = mne.Epochs(raw, events, event_id, tmin=-0.2, tmax=1.0, baseline=(None, 0), preload=True)
-    epochs.save(f'{save_dir}/{subj}_epochs.fif', overwrite=True)
-    return epochs
+# def epoch_data(subj,raw):
+#     raw = preprocess_raws(subj)
+#     events = mne.find_events(raw, stim_channel='STI 014', output='onset', shortest_event=1)
+#     event_id = {
+#         'start': 1,
+#         'move': 2,
+#         'reveal_red': 4,
+#         'reveal_white': 8,
+#         'done': 16,
+#     }
+#     epochs = mne.Epochs(raw, events, event_id, tmin=-0.2, tmax=1.0, baseline=(None, 0), preload=True)
+#     epochs.save(f'{save_dir}/{subj}-epo.fif', overwrite=True)
+#     return epochs
     
 if __name__ == '__main__':
     # concatenate_raws(subj, dtype)
     # bad_channel_interpolation(subj)
-    raw = ica_denoising(subj)
-    epoch_data(raw)
+    ica_denoising(subj)
+    # epoch_data(raw)
     # raw = apply_ica(subj)
     
