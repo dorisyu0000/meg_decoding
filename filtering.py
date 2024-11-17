@@ -5,17 +5,29 @@ import mne
 data_dir = 'data_meg'
 save_dir = 'data_meg'
 raws = []
-subj = "R2210"
+subj = "R2487"
+exp = 'exp'
 dtype = "raw"
 
 def concatenate_raws(subj, dtype):
-    for file in glob.glob(f'{data_dir}/{subj}/*{dtype}*.fif'):
+    reference_dev_head_t = None
+    for file in glob.glob(f'{data_dir}/{subj}/{exp}/*{dtype}*.fif'):
         print(file)
-        raws.append(mne.io.read_raw_fif(file, preload=True))
+        raw = mne.io.read_raw_fif(file, preload=True)
+        
+        # Set the reference dev_head_t from the first file
+        if reference_dev_head_t is None:
+            reference_dev_head_t = raw.info['dev_head_t']
+        
+        # Manually set dev_head_t to the reference
+        raw.info['dev_head_t'] = reference_dev_head_t
+        raws.append(raw)
+    
     if raws:  # Check if raws is not empty
         raw = mne.concatenate_raws(raws)
         raw.filter(1, 40, method='iir')
-    return raw
+        
+        return raw
     
 
 def preprocess_raws(subj):
@@ -50,28 +62,22 @@ def ica_denoising(subj):
     ica.plot_components()
     print('excluding:', ica.exclude)
     raw = ica.apply(raw, exclude = ica.exclude)
-    raw.save(f'{save_dir}/{subj}_{dtype}_ica.fif', overwrite=True)
+    raw.save(f'{save_dir}/{subj}_{exp}.fif', overwrite=True)
     return raw
 
+def ssp_denoising(subj):
+    raw = ica_denoising(subj)
+    ssp = mne.preprocessing.SSP(raw)
+    ssp.plot_sources(raw)
+    input('press enter to continue')
+    raw = ssp.apply(raw)
+    raw.save(f'{save_dir}/{subj}_{exp}_ssp.fif', overwrite=True)
+    return raw
 
-# def epoch_data(subj,raw):
-#     raw = preprocess_raws(subj)
-#     events = mne.find_events(raw, stim_channel='STI 014', output='onset', shortest_event=1)
-#     event_id = {
-#         'start': 1,
-#         'move': 2,
-#         'reveal_red': 4,
-#         'reveal_white': 8,
-#         'done': 16,
-#     }
-#     epochs = mne.Epochs(raw, events, event_id, tmin=-0.2, tmax=1.0, baseline=(None, 0), preload=True)
-#     epochs.save(f'{save_dir}/{subj}-epo.fif', overwrite=True)
-#     return epochs
-    
 if __name__ == '__main__':
     # concatenate_raws(subj, dtype)
     # bad_channel_interpolation(subj)
-    ica_denoising(subj)
     # epoch_data(raw)
     # raw = apply_ica(subj)
+    ica_denoising(subj)
     
