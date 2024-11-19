@@ -1,5 +1,6 @@
 data_meg/
 data_log/
+output/
 __pycache__/
 .DS_Store
 .venv/
