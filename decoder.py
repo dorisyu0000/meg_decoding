@@ -36,6 +36,8 @@ raw.filter(1, 40, method='iir')
 downsample = 10
 raw.resample(sfreq / downsample)
 
+trail_t = 21
+
 events = mne.find_events(raw, stim_channel='STI 014', output='onset', shortest_event=1)
 event_id = {
     'start': 160,
@@ -46,17 +48,6 @@ event_id = {
     'choice': 165,
     'timeout': 166
 }
-
-start_events = events[events[:, 2] == event_id['start']]
-done_events = events[events[:, 2] == event_id['done']]
-timeout_events = events[events[:, 2] == event_id['timeout']]
-reveal_red_events = events[events[:, 2] == event_id['reveal_red']]
-reveal_white_events = events[events[:, 2] == event_id['reveal_white']]
-sfreq = raw.info['sfreq']  # Sampling frequency
-
-# Combine 'done' and 'timeout' events
-end_events = np.concatenate((done_events, timeout_events))
-end_events = end_events[end_events[:, 0].argsort()]  # Sort by time
 
 # Initialize a list to store trial information
 trial_info = []
@@ -74,51 +65,63 @@ sfreq = raw.info['sfreq']  # Sampling frequency
 end_events = np.concatenate((done_events, timeout_events))
 end_events = end_events[end_events[:, 0].argsort()]  # Sort by time
 
+
+# Combine 'done' and 'timeout' events
+end_events = np.concatenate((done_events, timeout_events))
+end_events = end_events[end_events[:, 0].argsort()]  # Sort by time
+
 # Iterate through each start event to create trial information
 for idx, start_event in enumerate(start_events):
     start_sample = start_event[0]
-
+    
     # Find the next end event after the start event
     end_idx = np.searchsorted(end_events[:, 0], start_sample, side='right')
-    if end_idx < len(end_events):
-        end_sample = end_events[end_idx, 0]
+    end_sample = None
+    while end_idx < len(end_events):
+        potential_end_sample = end_events[end_idx, 0]
+        if (potential_end_sample - start_sample) / sfreq <= trail_t:
+            end_sample = potential_end_sample
+            break
+        end_idx += 1
 
-        # Check if the current start is at least 20 seconds after the previous start
-        if (previous_start_sample is None or (start_sample - previous_start_sample) / sfreq >= 20) and start_sample not in processed_starts:
-            # Proceed with processing this start event
-            previous_start_sample = start_sample
-            processed_starts.add(start_sample)  # Add to the set of processed starts
+    # If no valid end event is found, set end_sample to 26 seconds after start_sample
+    if end_sample is None:
+        end_sample = start_sample + int(trail_t * sfreq)
+        
 
-            # Calculate tmin and tmax for the epoch
-            tmin = -0.2  # 0.2 s before 'start'
-            tmax = (end_sample - start_sample) / sfreq + 1.0  # Duration from 'start' to 1 s after end event
-            print(f"tmax is {tmax}")
+    # Check if the current start is at least 20 seconds after the previous start
+    if (previous_start_sample is None or (start_sample - previous_start_sample) / sfreq >= 20) and start_sample not in processed_starts:
+        # Proceed with processing this start event
+        previous_start_sample = start_sample
+        processed_starts.add(start_sample)  # Add to the set of processed starts
 
-            reveal_red_within_trial = reveal_red_events[(reveal_red_events[:, 0] > start_sample) & 
-                                                        (reveal_red_events[:, 0] < end_sample)]
-            reveal_white_within_trial = reveal_white_events[(reveal_white_events[:, 0] > start_sample) & 
-                                                            (reveal_white_events[:, 0] < end_sample)]
-
-            # Store trial information, including whether 'reveal_red' and 'reveal_white' occurred
-            trial_info.append({
-                'event_sample': start_sample,
-                'trial_index': start_idx,
-                'duration': tmax,
-                'tmin': tmin,
-                'tmax': tmax,
-                'done': len(done_events) > 0,
-                'start_times': start_sample / sfreq,
-                'done_times': end_sample / sfreq,
-                'reveal_red': len(reveal_red_within_trial) > 0,  # Boolean flag indicating if 'reveal_red' occurred
-                'reveal_red_times': (reveal_red_within_trial[:, 0] - start_sample) / sfreq if len(reveal_red_within_trial) > 0 else [],
-                'reveal_white': len(reveal_white_within_trial) > 0,  # Boolean flag indicating if 'reveal_white' occurred
-                'reveal_white_times': (reveal_white_within_trial[:, 0] - start_sample) / sfreq if len(reveal_white_within_trial) > 0 else [],
-                'reveal_times': sorted(
-                    ((reveal_red_within_trial[:, 0] - start_sample) / sfreq).tolist() +
-                    ((reveal_white_within_trial[:, 0] - start_sample) / sfreq).tolist()
-                )
-            })
-            start_idx += 1
+        # Calculate tmin and tmax for the epoch
+        tmin = -0.2  # 0.2 s before 'start'
+        tmax = trail_t  # Duration from 'start' to 1 s after end event
+        reveal_red_within_trial = reveal_red_events[(reveal_red_events[:, 0] > start_sample) & 
+                                                    (reveal_red_events[:, 0] < end_sample)]
+        reveal_white_within_trial = reveal_white_events[(reveal_white_events[:, 0] > start_sample) & 
+                                                        (reveal_white_events[:, 0] < end_sample)]
+        # Store trial information, including whether 'reveal_red' and 'reveal_white' occurred
+        trial_info.append({
+            'event_sample': start_sample,
+            'trial_index': start_idx,
+            'duration': tmax,
+            'tmin': tmin,
+            'tmax': trail_t,
+            'done': len(done_events) > 0,
+            'start_times': start_sample / sfreq,
+            'done_times': end_sample / sfreq,
+            'reveal_red': len(reveal_red_within_trial) > 0,  # Boolean flag indicating if 'reveal_red' occurred
+            'reveal_red_times': (reveal_red_within_trial[:, 0] - start_sample) / sfreq if len(reveal_red_within_trial) > 0 else [],
+            'reveal_white': len(reveal_white_within_trial) > 0,  # Boolean flag indicating if 'reveal_white' occurred
+            'reveal_white_times': (reveal_white_within_trial[:, 0] - start_sample) / sfreq if len(reveal_white_within_trial) > 0 else [],
+            'reveal_times': sorted(
+                ((reveal_red_within_trial[:, 0] - start_sample) / sfreq).tolist() +
+                ((reveal_white_within_trial[:, 0] - start_sample) / sfreq).tolist()
+            )
+        })
+        start_idx += 1
 new_events = np.array([[info['event_sample'], 0, event_id['start']] for info in trial_info])
 
 # Iterate over new_events and create epochs, skipping the unwanted trials
