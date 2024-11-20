@@ -19,7 +19,7 @@ from sklearn.linear_model import LogisticRegressionCV
 from sklearn.metrics import accuracy_score
 from scipy.ndimage import gaussian_filter1d
 data_dir = 'data_meg'
-subj = "R2488"
+subj = "R2487"
 dataqual = 'prepro' #or loc/exp
 exp = 'exp' #or exp
 dtype = "raw"
@@ -63,6 +63,16 @@ trial_info = []
 previous_start_sample = None
 processed_starts = set()
 start_idx = 0
+start_events = events[events[:, 2] == event_id['start']]
+done_events = events[events[:, 2] == event_id['done']]
+timeout_events = events[events[:, 2] == event_id['timeout']]
+reveal_red_events = events[events[:, 2] == event_id['reveal_red']]
+reveal_white_events = events[events[:, 2] == event_id['reveal_white']]
+sfreq = raw.info['sfreq']  # Sampling frequency
+
+# Combine 'done' and 'timeout' events
+end_events = np.concatenate((done_events, timeout_events))
+end_events = end_events[end_events[:, 0].argsort()]  # Sort by time
 
 # Iterate through each start event to create trial information
 for idx, start_event in enumerate(start_events):
@@ -81,7 +91,7 @@ for idx, start_event in enumerate(start_events):
 
             # Calculate tmin and tmax for the epoch
             tmin = -0.2  # 0.2 s before 'start'
-            tmax = 26   # Duration from 'start' to 1 s after end event
+            tmax = (end_sample - start_sample) / sfreq + 1.0  # Duration from 'start' to 1 s after end event
             print(f"tmax is {tmax}")
 
             reveal_red_within_trial = reveal_red_events[(reveal_red_events[:, 0] > start_sample) & 
@@ -93,13 +103,12 @@ for idx, start_event in enumerate(start_events):
             trial_info.append({
                 'event_sample': start_sample,
                 'trial_index': start_idx,
-                'duration': 26,
+                'duration': tmax,
                 'tmin': tmin,
-                'tmax': 26,
-                'done':
-                 
-                  len(done_events) > 0,
+                'tmax': tmax,
+                'done': len(done_events) > 0,
                 'start_times': start_sample / sfreq,
+                'done_times': end_sample / sfreq,
                 'reveal_red': len(reveal_red_within_trial) > 0,  # Boolean flag indicating if 'reveal_red' occurred
                 'reveal_red_times': (reveal_red_within_trial[:, 0] - start_sample) / sfreq if len(reveal_red_within_trial) > 0 else [],
                 'reveal_white': len(reveal_white_within_trial) > 0,  # Boolean flag indicating if 'reveal_white' occurred
@@ -110,7 +119,6 @@ for idx, start_event in enumerate(start_events):
                 )
             })
             start_idx += 1
-
 new_events = np.array([[info['event_sample'], 0, event_id['start']] for info in trial_info])
 
 # Iterate over new_events and create epochs, skipping the unwanted trials
@@ -161,33 +169,23 @@ y = label_encoder.fit_transform(y_labels)
 n_labels = len(y_labels)
 n_trials = len(trial_info_valid)
 
-def extract_reveal(trial_info_valid, raw, label_dict, n_events=4, n_points_before=50, n_points_after=50):
+def extract_reveal(trial_info_valid, raw, label_dict, event_name='reveal_red', n_points_before=50, n_points_after=50, num_events=4):
     y_labels = []
     X_reveal = []
     trial_indices = []
     sfreq = raw.info['sfreq']  # Sampling frequency
 
     for info in trial_info_valid:
-        # Combine reveal times for both red and white
-        reveal_times = np.concatenate((info['reveal_red_times']))
-        reveal_times.sort()  # Sort the times to get the first four in order
-
-        # Check if there are at least four reveal events
-        if len(reveal_times) >= n_events:
-            # Initialize a list to store data for this trial
+        reveal_times = info[f'{event_name}_times']
+        if len(reveal_times) >= num_events:
             trial_data = []
 
-            # Extract the first four reveal events
-            for event_time in reveal_times[:n_events]:
+            for event_time in reveal_times[:num_events]:
                 event_sample = int(event_time * sfreq)
-
-                # Calculate start and end samples for extraction
                 start_sample_before = event_sample - n_points_before
                 end_sample_after = event_sample + n_points_after
 
-                # Ensure the samples are within bounds
                 if start_sample_before >= 0 and end_sample_after <= raw.n_times:
-                    # Extract data for this event
                     epoch_data = raw.get_data(start=start_sample_before, stop=end_sample_after)
                     
                     # Ensure epoch_data is 3D
@@ -196,16 +194,18 @@ def extract_reveal(trial_info_valid, raw, label_dict, n_events=4, n_points_befor
                     
                     trial_data.append(epoch_data)
 
-            # Concatenate all event data for this trial along the time axis
             if trial_data:
-                trial_data_concatenated = np.concatenate(trial_data, axis=2)
-                X_reveal.append(trial_data_concatenated)
-
-                # Append the corresponding label
-                trial_index = info['trial_index']
-                if trial_index in label_dict:
-                    y_labels.append(label_dict[trial_index])
-                    trial_indices.append(trial_index)
+                # Check if all trial_data have the same shape
+                trial_data_shapes = [data.shape for data in trial_data]
+                if len(set(trial_data_shapes)) == 1:
+                    trial_data_concatenated = np.concatenate(trial_data, axis=2)
+                    X_reveal.append(trial_data_concatenated)
+                    trial_index = info['trial_index']
+                    if trial_index in label_dict:
+                        y_labels.append(label_dict[trial_index])
+                        trial_indices.append(trial_index)
+                else:
+                    print(f"Inconsistent shapes in trial data for trial index {info['trial_index']}: {trial_data_shapes}")
 
     return np.array(X_reveal), np.array(y_labels), trial_indices
 
@@ -234,27 +234,29 @@ def extract_start(trial_info, raw, label_dict, n_points_before=50, n_points_afte
     return  np.array(X_start), np.array(y_labels), trial_indices
 
 
-def extract_done(trial_info, raw, label_dict, n_points_before=100, n_points_after=100):
+def extract_done(trial_info, raw, label_dict, n_points_before=50, n_points_after=50):
     X_done = []
     y_labels = []
     trial_indices = []
     sfreq = raw.info['sfreq']  # Sampling frequency
-
-    for info in trial_info:
+    done_times = [info['done_times'] for info in trial_info]
+    start_times = [info['start_times'] for info in trial_info]
+    
+    for info, done_time, start_time in zip(trial_info, done_times, start_times):
         # Check if the "done" event exists
-        if info['tmax'] >25:  # Assuming these indicate the presence of a "done" event
-            # Get the done sample from the trial information
+        done_time = info['done_times'] 
+        start_time = info['start_times']
+        print(f"Trial_index: {info['trial_index']}, Done time: {done_time}, Start time: {start_time}")
+        if int(done_time) - int(start_time) > 25:  # Assuming these indicate the presence of a "done" event
             done_sample = info['event_sample'] + int((info['tmax'] - 1.0) * sfreq)
             start_sample_before = done_sample - n_points_before
             end_sample_after = done_sample + n_points_after
         else:
-            # Use 24 to 26 seconds after the start event
-            start_sample_before = info['event_sample'] + int(24 * sfreq)
-            end_sample_after = info['event_sample'] + int(26 * sfreq)
+            start_sample_before = int(done_time * sfreq) - n_points_before
+            end_sample_after = int(done_time * sfreq) + n_points_after
 
         # Ensure the samples are within bounds
         if start_sample_before >= 0 and end_sample_after <= raw.n_times:
-            # Extract data for this trial
             epoch_data = raw.get_data(start=start_sample_before, stop=end_sample_after)
             X_done.append(epoch_data)
             trial_index = info['trial_index']
@@ -264,8 +266,9 @@ def extract_done(trial_info, raw, label_dict, n_points_before=100, n_points_afte
 
     return np.array(X_done), np.array(y_labels), trial_indices
 
+
 # Extract the first n_events reveal events
-epoch_reveal, y_labels_reveal, trial_indices_reveal = extract_reveal(trial_info_valid, raw, label_dict, n_events=4)
+epoch_reveal, y_labels_reveal, trial_indices_reveal = extract_reveal(trial_info_valid, raw, label_dict,num_events=4)
 epoch_start, y_labels_start, trial_indices_start = extract_start(trial_info_valid, raw, label_dict)
 epoch_done, y_labels_done, trial_indices_done = extract_done(trial_info_valid, raw, label_dict)
 
@@ -290,6 +293,7 @@ n_trials, n_channels, n_timepoints_per_event, n_events = epoch_reveal_filtered.s
 epoch_reveal_flattened = epoch_reveal_filtered.reshape(n_trials, n_channels, n_timepoints_per_event * n_events)
 
 # Check the new shape
+print(f"Epoch_reveal shape: {epoch_reveal_filtered.shape}")
 print(f"Flattened epoch_reveal shape: {epoch_reveal_flattened.shape}")
 
 # Combine the filtered epochs
@@ -298,10 +302,9 @@ X_combined = np.concatenate((epoch_start_filtered, epoch_reveal_flattened, epoch
 # Use the labels from the first filtered epoch (assuming they are the same for all)
 y_combined = y_labels_done_filtered
 
-n_time_points = X.shape[2]
-n_classes = len(np.unique(y))
+n_time_points = X_combined.shape[2]
+n_classes = len(np.unique(y_combined))
 cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-
 
 def smooth_scores(scores, sigma=2):
     return gaussian_filter1d(scores, sigma=sigma)
@@ -326,13 +329,11 @@ def train_time_decoder(X, y, cv):
 
     scores = cross_val_multiscore(time_decoding, X, y, cv=cv, n_jobs=5)
     scores_mean = np.mean(scores, axis=0)
-    save_dir = f'{save_dir}/{subj}/{dataqual}/{exp}'
-    np.save(f'{save_dir}/time_decoder_scores.npy', scores_mean)
     return mean_scores_first, mean_scores_later, scores_mean
 
 
 # Function to perform time decoding and plot results for two sets of trials
-def plot_time_decoding(mean_scores_first, mean_scores_later,title):
+def plot_time_decoding(mean_scores_first, mean_scores_later,title, subj):
     n_time_points = mean_scores_first.shape[0]
     # Plot the first 50 trials
     smoothed_scores_first = smooth_scores(mean_scores_first)
@@ -364,11 +365,13 @@ def plot_time_decoding(mean_scores_first, mean_scores_later,title):
     axes[1].set_title('Later Half Trials')
     axes[1].legend(loc='upper left', bbox_to_anchor=(1, 1))
     axes[1].set_ylim(0.2, 0.5)
+    plt.savefig(f'output/{subj}.png')
     plt.suptitle(title)
     plt.tight_layout()
     plt.show()
-    plt.savefig(f'{save_dir}/time_decoder.png')
+    
 
 
 mean_scores_first, mean_scores_later, scores_mean = train_time_decoder(X_combined, y_combined, cv)
-plot_time_decoding(mean_scores_first, mean_scores_later, 'Time Decoding')
+plot_time_decoding(mean_scores_first, mean_scores_later, 'Time Decoding', subj = subj)
+np.save(f'{save_dir}/time_decoder_{subj}.npy', scores_mean)

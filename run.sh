@@ -7,4 +7,4 @@
 #SBATCH --output output/slurm-%J.txt
 
 
-python test.py
+python decoder.py
