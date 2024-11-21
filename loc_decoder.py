@@ -23,7 +23,7 @@ parser.add_argument('--subject', type=str, required=True, help='Subject identifi
 args = parser.parse_args()
 
 # Use the subject from the command-line argument
-subj = args.subject
+subj = "R2490"
 
 data_dir = 'data_meg'
 dataqual = 'prepro' #or loc/exp
@@ -360,9 +360,12 @@ def locolizer(subj, group, X_new):
     clf = joblib.load(model_filename)
     print(f"Model for group {group} loaded from {model_filename}")
     
-    # Ensure the new data is in the correct shape
-    # Assuming X_new is 3D: (n_samples, n_channels, n_timepoints)
+    # X_new : (n_samples, n_channels, n_timepoints)
+    expected_features = clf.named_steps['standardscaler'].n_features_in_
     X_new_flat = X_new.reshape(X_new.shape[0], -1)  # Flatten the data
+    
+    if X_new_flat.shape[1] != expected_features:
+        raise ValueError(f"X has {X_new_flat.shape[1]} features, but StandardScaler is expecting {expected_features} features as input.")
     
     # Use the model to make predictions
     predictions = clf.predict(X_new_flat)
@@ -393,4 +396,4 @@ plt.xticks(loclizers)
 plt.ylim(0, 1)
 plt.grid(True)
 plt.show()
-
+plt.savefig(f"{save_dir}/{subj}/locolizer_accuracy.png")
