@@ -12,14 +12,23 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 from sklearn.metrics import confusion_matrix, f1_score, classification_report
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import cross_val_score, StratifiedKFold
+from sklearn.model_selection import cross_val_score, StratifiedKFold, LeaveOneOut
 from matplotlib import pyplot as plt
 label_encoder = LabelEncoder()
 from sklearn.linear_model import LogisticRegressionCV
 from sklearn.metrics import accuracy_score
 from scipy.ndimage import gaussian_filter1d
+import argparse
+
+# Parse command-line arguments
+parser = argparse.ArgumentParser(description='Process MEG data for a specific subject.')
+parser.add_argument('--subject', type=str, required=True, help='Subject identifier')
+args = parser.parse_args()
+
+# Use the subject from the command-line argument
+subj = args.subject
+
 data_dir = 'data_meg'
-subj = "R2487"
 dataqual = 'prepro' #or loc/exp
 exp = 'exp' #or exp
 dtype = "raw"
@@ -315,74 +324,40 @@ y_combined = y_labels_done_filtered
 
 n_time_points = X_combined.shape[2]
 n_classes = len(np.unique(y_combined))
-cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+
 
 def smooth_scores(scores, sigma=2):
     return gaussian_filter1d(scores, sigma=sigma)
 
-def train_time_decoder(X, y, cv):
+def train_time_decoder(X, y):
         # Train the time decoder on the entire dataset
     x_len = len(X)
-    x_first = X[:x_len//2]
-    y_first = y[:x_len//2]
-    x_later = X[-x_len//2:]
-    y_later = y[-x_len//2:]
+    n_trials = len(y)
+    cv = LeaveOneOut()
     clf = make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000))
     time_decoding = SlidingEstimator(clf, n_jobs=5, scoring='accuracy')
-    
-    # Perform cross-validation for the first 50 trials
-    scores_first = cross_val_multiscore(time_decoding, x_first, y_first, cv=cv, n_jobs=5)
-    mean_scores_first = np.mean(scores_first, axis=0)
-    
-    # Perform cross-validation for the later 50 trials
-    scores_later = cross_val_multiscore(time_decoding, x_later, y_later, cv=cv, n_jobs=5)
-    mean_scores_later = np.mean(scores_later, axis=0)
 
     scores = cross_val_multiscore(time_decoding, X, y, cv=cv, n_jobs=5)
+    print(f"Scores shape: {scores.shape}")
     scores_mean = np.mean(scores, axis=0)
-    return mean_scores_first, mean_scores_later, scores_mean
+    return scores_mean
 
 
 # Function to perform time decoding and plot results for two sets of trials
-def plot_time_decoding(mean_scores_first, mean_scores_later,title, subj):
-    n_time_points = mean_scores_first.shape[0]
-    # Plot the first 50 trials
-    smoothed_scores_first = smooth_scores(mean_scores_first)
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
-    axes[0].plot(np.arange(n_time_points), smoothed_scores_first, label='First 50 Trials Accuracy')
-    axes[0].axvline(x=100, color='b', linestyle='--', label='Start')
-    axes[0].axvline(x=200, color='r', linestyle='--', label='First Tail')
-    axes[0].axvline(x=300, color='y', linestyle='--', label='Second Tail')
-    axes[0].axvline(x=400, color='g', linestyle='--', label='Third Tail')
-    axes[0].axvline(x=600, color='y', linestyle='--', label='Time out / Done')
-    axes[0].axhline(1/n_classes, color='k', linestyle='--', label='chance')
-    axes[0].set_xlabel('Time Points')
-    axes[0].set_ylabel('Accuracy')
-    axes[0].set_title('First Half Trials')
-    axes[0].set_ylim(0.2, 0.5)
-
-    # Plot the later 50 trials
-    smoothed_scores_later = smooth_scores(mean_scores_later)
-    axes[1].plot(np.arange(n_time_points), smoothed_scores_later, label='Later 50 Trials Accuracy', linestyle='--')
-    axes[1].axvline(x=100, color='b', linestyle='--', label='Start')
-    axes[1].axvline(x=200, color='r', linestyle='--', label='First Tail')
-    axes[1].axvline(x=300, color='y', linestyle='--', label='Second Tail')
-    axes[1].axvline(x=400, color='g', linestyle='--', label='Third Tail')
-    axes[1].axvline(x=500, color='y', linestyle='--', label='Fourth Tail')
-    axes[1].axvline(x=600, color='y', linestyle='--', label='Time out / Done')
-    axes[1].axhline(1/n_classes, color='k', linestyle='--', label='chance')
-    axes[1].set_xlabel('Time Points')
-    axes[1].set_ylabel('Accuracy')
-    axes[1].set_title('Later Half Trials')
-    axes[1].legend(loc='upper left', bbox_to_anchor=(1, 1))
-    axes[1].set_ylim(0.2, 0.5)
-    plt.savefig(f'output/{subj}.png')
+def plot_time_decoding(scores_mean,title, subj):
+    n_time_points = scores_mean.shape[0]
+    scores_mean = smooth_scores(scores_mean)
+    plt.plot(np.arange(n_time_points), scores_mean)
+    plt.axhline(1/n_classes, color='k', linestyle='--', label='chance')
+    plt.xlabel('Time Points')
+    plt.ylabel('Accuracy')
     plt.suptitle(title)
     plt.tight_layout()
     plt.show()
+    plt.savefig(f'output/{subj}_time_decoding_{n_time_points}.png')
     
 
-
-mean_scores_first, mean_scores_later, scores_mean = train_time_decoder(X_combined, y_combined, cv)
-plot_time_decoding(mean_scores_first, mean_scores_later, 'Time Decoding', subj = subj)
-np.save(f'{save_dir}/time_decoder_{subj}.npy', scores_mean)
+scores_mean_600ms = train_time_decoder(X_combined, y_combined)
+plot_time_decoding(scores_mean_600ms, 'Time Decoding 600ms', subj = subj)
+scores_mean_2500ms = train_time_decoder(X, y)
+plot_time_decoding(scores_mean_2500ms, 'Time Decoding 2500ms', subj = subj)

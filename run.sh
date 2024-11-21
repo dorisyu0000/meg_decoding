@@ -4,7 +4,15 @@
 #SBATCH --mem-per-cpu 32G
 #SBATCH --cpus-per-task=2
 #SBATCH --job-name tunnel
-#SBATCH --output output/slurm-%J.txt
+#SBATCH --output=output/stdout/slurm-%J.txt
+#SBATCH --error=output/stderr/slurm-%J.err
 
 
-python decoder.py
+# List of subjects
+subjects=("R2488" "R2489" "R2490")  # Add more subjects as needed
+
+# Loop over each subject
+for subj in "${subjects[@]}"; do
+    echo "Processing subject: $subj"
+    python decoder.py --subject "$subj"
+done
