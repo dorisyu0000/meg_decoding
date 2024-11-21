@@ -7,19 +7,16 @@ import pandas as pd
 import mne
 from mne.decoding import SlidingEstimator, cross_val_multiscore, Vectorizer, GeneralizingEstimator
 import seaborn as sns
-from sklearn.preprocessing import LabelEncoder
-from sklearn.preprocessing import StandardScaler 
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.pipeline import make_pipeline
-from sklearn.metrics import confusion_matrix, f1_score, classification_report
-from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import confusion_matrix, f1_score, classification_report, accuracy_score
 from sklearn.model_selection import cross_val_score, StratifiedKFold, LeaveOneOut
-from matplotlib import pyplot as plt
-label_encoder = LabelEncoder()
 from sklearn.linear_model import LogisticRegressionCV
-from sklearn.metrics import accuracy_score
 from scipy.ndimage import gaussian_filter1d
 import argparse
+import joblib 
 
+label_encoder = LabelEncoder()
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description='Process MEG data for a specific subject.')
 parser.add_argument('--subject', type=str, required=True, help='Subject identifier')
@@ -45,6 +42,8 @@ bad_channels = bad_channels_dict.get(subj, [])
 raw.info['bads'].extend(bad_channels)
 raw.drop_channels(bad_channels)
 # Initialize lists to store individual epochs data and trial information
+loclizers = [4, 9, 16, 25]
+trail_t = 21
 tmin = -0.2  
 epochs_data_list = []
 trial_info_valid = []
@@ -53,7 +52,6 @@ raw.filter(1, 40, method='iir')
 downsample = 10
 raw.resample(sfreq / downsample)
 
-trail_t = 21
 
 events = mne.find_events(raw, stim_channel='STI 014', output='onset', shortest_event=1)
 event_id = {
@@ -331,35 +329,68 @@ n_classes = len(np.unique(y_combined))
 def smooth_scores(scores, sigma=2):
     return gaussian_filter1d(scores, sigma=sigma)
 
-def train_time_decoder(X, y):
-        # Train the time decoder on the entire dataset
-    x_len = len(X)
-    n_trials = len(y)
-    cv = LeaveOneOut()
-    clf = make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000))
-    time_decoding = SlidingEstimator(clf, n_jobs=5, scoring='accuracy')
-
-    scores = cross_val_multiscore(time_decoding, X, y, cv=cv, n_jobs=5)
-    print(f"Scores shape: {scores.shape}")
-    scores_mean = np.mean(scores, axis=0)
-    return scores_mean
-
-
-# Function to perform time decoding and plot results for two sets of trials
-def plot_time_decoding(scores_mean,title, subj):
-    n_time_points = scores_mean.shape[0]
-    scores_mean = smooth_scores(scores_mean)
-    plt.plot(np.arange(n_time_points), scores_mean)
-    plt.axhline(1/n_classes, color='k', linestyle='--', label='chance')
-    plt.xlabel('Time Points')
-    plt.ylabel('Accuracy')
-    plt.suptitle(title)
-    plt.tight_layout()
-    plt.show()
-    plt.savefig(f'output/{subj}_time_decoding_{n_time_points}.png')
+def segment_data_into_windows(data, sfreq, window_size=1):
+    """
+    Segments data into windows of specified size.
     
+    Parameters:
+    - data: 3D numpy array of shape (n_samples, n_channels, n_timepoints)
+    - sfreq: Sampling frequency of the data
+    - window_size: Size of each window in seconds
+    
+    Returns:
+    - windows: List of 3D numpy arrays, each representing a window
+    """
+    n_samples, n_channels, n_timepoints = data.shape
+    window_length = int(sfreq * window_size)
+    windows = []
+    
+    for start in range(0, n_timepoints - window_length + 1, window_length):
+        end = start + window_length
+        window = data[:, :, start:end]
+        windows.append(window)
+    
+    return windows
 
-scores_mean_600ms = train_time_decoder(X_combined, y_combined)
-plot_time_decoding(scores_mean_600ms, 'Time Decoding 600ms', subj = subj)
-scores_mean_2500ms = train_time_decoder(X, y)
-plot_time_decoding(scores_mean_2500ms, 'Time Decoding 2500ms', subj = subj)
+def locolizer(subj, group, X_new):
+    # Construct the filename
+    model_filename = f"locolizer/{subj}_decoder_{group}.joblib"
+    
+    # Load the model
+    clf = joblib.load(model_filename)
+    print(f"Model for group {group} loaded from {model_filename}")
+    
+    # Ensure the new data is in the correct shape
+    # Assuming X_new is 3D: (n_samples, n_channels, n_timepoints)
+    X_new_flat = X_new.reshape(X_new.shape[0], -1)  # Flatten the data
+    
+    # Use the model to make predictions
+    predictions = clf.predict(X_new_flat)
+    return predictions
+
+
+sfreq = raw.info['sfreq'] 
+accuracies = []
+windows = segment_data_into_windows(X_combined, sfreq, window_size=1)
+for loc in loclizers:
+    all_predictions = []
+    for window in windows:
+        predictions = locolizer(subj, loc, window)
+        all_predictions.extend(predictions)
+    
+    # Calculate accuracy
+    accuracy = accuracy_score(y_combined, all_predictions)
+    accuracies.append(accuracy)
+    print(f"Accuracy for locolizer {loc}: {accuracy}")
+
+# Plot the accuracies
+plt.figure(figsize=(10, 6))
+plt.plot(loclizers, accuracies, marker='o')
+plt.title('Prediction Accuracy for Different Loclizers')
+plt.xlabel('Loclizer')
+plt.ylabel('Accuracy')
+plt.xticks(loclizers)
+plt.ylim(0, 1)
+plt.grid(True)
+plt.show()
+

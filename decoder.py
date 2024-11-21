@@ -36,7 +36,7 @@ label_dir = 'data_log'
 save_dir = 'data_meg'
 raw = mne.io.read_raw_fif(f'{data_dir}/{subj}/{dataqual}/{subj}_{exp}.fif', preload=True)
 bad_channels_dict = {
-    "R2280": ['MEG 015', 'MEG 013', 'MEG 039', 'MEG 064', 'MEG 079', 'MEG 081', 'MEG 083', 'MEG 085', 'MEG 088', 'MEG 095', 'MEG 097', 'MEG 126', 'MEG 124', 'MEG 141'],
+    "R2280": ['MEG 008', 'MEG 013', 'MEG 023', 'MEG 030', 'MEG 039', 'MEG 046', 'MEG 059', 'MEG 058', 'MEG 060', 'MEG 063', 'MEG 069', 'MEG 070', 'MEG 067', 'MEG 064', 'MEG 073', 'MEG 071', 'MEG 075', 'MEG 077', 'MEG 079', 'MEG 076', 'MEG 080', 'MEG 105', 'MEG 141', 'MEG 153', 'MEG 154', 'MEG 151', 'MEG 152'],
     "R2487": ['MEG 014', 'MEG 068', 'MEG 079', 'MEG 074', 'MEG 147', 'MEG 146'],
     "R2488": ['MEG 014', 'MEG 068', 'MEG 079', 'MEG 147', 'MEG 146'],
     "R2490": ['MEG 015', 'MEG 038', 'MEG 059', 'MEG 060', 'MEG 058', 'MEG 063', 'MEG 064', 'MEG 065', 'MEG 074', 'MEG 079', 'MEG 068', 'MEG 156', 'MEG 153']
