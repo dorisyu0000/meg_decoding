@@ -9,7 +9,7 @@
 
 
 # List of subjects
-subjects=("R2488" "R2489" "R2490")  # Add more subjects as needed
+subjects=("R2488" "R2280" "R2490")   # Add more subjects as needed
 
 # Loop over each subject
 for subj in "${subjects[@]}"; do
