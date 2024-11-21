@@ -26,7 +26,15 @@ dtype = "raw"
 label_dir = 'data_log'
 save_dir = 'data_meg'
 raw = mne.io.read_raw_fif(f'{data_dir}/{subj}/{dataqual}/{subj}_{exp}.fif', preload=True)
-
+bad_channels_dict = {
+    "R2280": ['MEG 015', 'MEG 013', 'MEG 039', 'MEG 064', 'MEG 079', 'MEG 081', 'MEG 083', 'MEG 085', 'MEG 088', 'MEG 095', 'MEG 097', 'MEG 126', 'MEG 124', 'MEG 141'],
+    "R2487": ['MEG 014', 'MEG 068', 'MEG 079', 'MEG 074', 'MEG 147', 'MEG 146'],
+    "R2488": ['MEG 014', 'MEG 068', 'MEG 079', 'MEG 147', 'MEG 146'],
+    "R2490": ['MEG 015', 'MEG 038', 'MEG 059', 'MEG 060', 'MEG 058', 'MEG 063', 'MEG 064', 'MEG 065', 'MEG 074', 'MEG 079', 'MEG 068', 'MEG 156', 'MEG 153']
+}
+bad_channels = bad_channels_dict.get(subj, [])
+raw.info['bads'].extend(bad_channels)
+raw.drop_channels(bad_channels)
 # Initialize lists to store individual epochs data and trial information
 tmin = -0.2  
 epochs_data_list = []

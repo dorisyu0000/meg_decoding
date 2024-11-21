@@ -5,8 +5,8 @@ import mne
 data_dir = 'data_meg'
 save_dir = 'data_meg'
 raws = []
-subj = "R2487"
-exp = 'exp'
+subj = "R2280"
+exp = 'loc'
 dtype = "raw"
 
 def concatenate_raws(subj, dtype):
@@ -48,8 +48,8 @@ def bad_channel_interpolation(subj):
     raw.plot()
     input('Mark bads, press enter to continue')
     print(f"Bads: {raw.info['bads']}")
-
     raw.interpolate_bads()
+    raw.save(f'{save_dir}/{subj}_{exp}_preprocessed.fif', overwrite=True)
     return raw
 
 def ica_denoising(subj):
@@ -72,6 +72,7 @@ def ssp_denoising(subj):
     input('press enter to continue')
     raw = ssp.apply(raw)
     raw.save(f'{save_dir}/{subj}_{exp}_ssp.fif', overwrite=True)
+    print(raw.info)
     return raw
 
 if __name__ == '__main__':
