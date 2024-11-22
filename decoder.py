@@ -340,6 +340,7 @@ def train_time_decoder(X, y):
     time_decoding = SlidingEstimator(clf, n_jobs=5, scoring='accuracy')
 
     scores = cross_val_multiscore(time_decoding, X, y, cv=cv, n_jobs=5)
+    np.save(f'output/{subj}_time_decoding_{n_time_points}.npy', scores)
     print(f"Scores shape: {scores.shape}")
     scores_mean = np.mean(scores, axis=0)
     return scores_mean

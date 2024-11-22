@@ -14,5 +14,5 @@ subjects=("R2488" "R2280" "R2490")   # Add more subjects as needed
 # Loop over each subject
 for subj in "${subjects[@]}"; do
     echo "Processing subject: $subj"
-    python decoder.py --subject "$subj"
+    python loc_decoder.py --subject "$subj"
 done
