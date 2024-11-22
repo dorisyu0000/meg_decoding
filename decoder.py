@@ -19,7 +19,7 @@ from sklearn.linear_model import LogisticRegressionCV
 from sklearn.metrics import accuracy_score
 from scipy.ndimage import gaussian_filter1d
 import argparse
-
+from util import EventExtractor
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description='Process MEG data for a specific subject.')
 parser.add_argument('--subject', type=str, required=True, help='Subject identifier')
@@ -164,20 +164,12 @@ for idx, event in enumerate(new_events):
         print(f"Drop log for Epoch {idx}: {epochs.drop_log}")
 
 
-# Step 0: Load labels
+#Load labels
 label_encoder = LabelEncoder()
 labels_df = pd.read_csv(f'{label_dir}/{subj}/label.csv')
-
-# Step 1: Get the valid trial indices
 valid_trial_indices = {info['trial_index'] for info in trial_info_valid}
-
-# Step 2: Filter labels_df to only include valid trial indices
 labels_df_filtered = labels_df[labels_df['trial_index'].isin(valid_trial_indices)]
 label_dict = dict(zip(labels_df_filtered['trial_index'], labels_df_filtered['trial.rule']))
-
-X = np.array([md.data for md in epochs_data_list])  # Shape: (n_epochs, n_channels, n_times)
-X = X.squeeze(axis=1)
-# Step 3: Extract labels for the valid trials in trial_info_valid
 y_labels = []
 for info in trial_info_valid:
     idx = info['trial_index']
@@ -186,143 +178,16 @@ for info in trial_info_valid:
 
 # Convert labels to integers using label encoder
 y = label_encoder.fit_transform(y_labels)
+X = np.array([md.data for md in epochs_data_list])  # Shape: (n_epochs, n_channels, n_times)
+X = X.squeeze(axis=1)
 
 # Print the number of labels and valid trials after matching
 n_labels = len(y_labels)
 n_trials = len(trial_info_valid)
 
-def extract_reveal(trial_info_valid, raw, label_dict, event_name='reveal_red', n_points_before=50, n_points_after=50, num_events=4):
-    y_labels = []
-    X_reveal = []
-    trial_indices = []
-    sfreq = raw.info['sfreq']  # Sampling frequency
 
-    for info in trial_info_valid:
-        reveal_times = info[f'{event_name}_times']
-        if len(reveal_times) >= num_events:
-            trial_data = []
-
-            for event_time in reveal_times[:num_events]:
-                event_sample = int(event_time * sfreq)
-                start_sample_before = event_sample - n_points_before
-                end_sample_after = event_sample + n_points_after
-
-                if start_sample_before >= 0 and end_sample_after <= raw.n_times:
-                    epoch_data = raw.get_data(start=start_sample_before, stop=end_sample_after)
-                    
-                    # Ensure epoch_data is 3D
-                    if epoch_data.ndim == 2:
-                        epoch_data = np.expand_dims(epoch_data, axis=2)
-                    
-                    trial_data.append(epoch_data)
-
-            if trial_data:
-                # Check if all trial_data have the same shape
-                trial_data_shapes = [data.shape for data in trial_data]
-                if len(set(trial_data_shapes)) == 1:
-                    trial_data_concatenated = np.concatenate(trial_data, axis=2)
-                    X_reveal.append(trial_data_concatenated)
-                    trial_index = info['trial_index']
-                    if trial_index in label_dict:
-                        y_labels.append(label_dict[trial_index])
-                        trial_indices.append(trial_index)
-                else:
-                    print(f"Inconsistent shapes in trial data for trial index {info['trial_index']}: {trial_data_shapes}")
-
-    return np.array(X_reveal), np.array(y_labels), trial_indices
-
-def extract_start(trial_info, raw, label_dict, n_points_before=50, n_points_after=50):
-    X_start = []
-    y_labels = []
-    trial_indices = []
-    for info in trial_info:
-        # Get the done sample from the trial information
-        start_sample = info['event_sample'] + int((info['tmin'] + 0.2) * raw.info['sfreq'])
-
-        # Calculate start and end samples for extraction
-        start_sample_before = start_sample - n_points_before
-        end_sample_after = start_sample + n_points_after
-
-        # Ensure the samples are within bounds
-        if start_sample_before >= 0 and end_sample_after <= raw.n_times:
-            # Extract data for this trial
-            epoch_data = raw.get_data(start=start_sample_before, stop=end_sample_after)
-            X_start.append(epoch_data)
-            trial_index = info['trial_index']
-            if trial_index in label_dict:
-                y_labels.append(label_dict[trial_index])
-                trial_indices.append(trial_index)
-
-    return  np.array(X_start), np.array(y_labels), trial_indices
-
-
-def extract_done(trial_info, raw, label_dict, n_points_before=50, n_points_after=50):
-    X_done = []
-    y_labels = []
-    trial_indices = []
-    sfreq = raw.info['sfreq']  # Sampling frequency
-    done_times = [info['done_times'] for info in trial_info]
-    start_times = [info['start_times'] for info in trial_info]
-    
-    for info, done_time, start_time in zip(trial_info, done_times, start_times):
-        # Check if the "done" event exists
-        done_time = info['done_times'] 
-        start_time = info['start_times']
-        print(f"Trial_index: {info['trial_index']}, Done time: {done_time}, Start time: {start_time}")
-        if int(done_time) - int(start_time) > 25:  # Assuming these indicate the presence of a "done" event
-            done_sample = info['event_sample'] + int((info['tmax'] - 1.0) * sfreq)
-            start_sample_before = done_sample - n_points_before
-            end_sample_after = done_sample + n_points_after
-        else:
-            start_sample_before = int(done_time * sfreq) - n_points_before
-            end_sample_after = int(done_time * sfreq) + n_points_after
-
-        # Ensure the samples are within bounds
-        if start_sample_before >= 0 and end_sample_after <= raw.n_times:
-            epoch_data = raw.get_data(start=start_sample_before, stop=end_sample_after)
-            X_done.append(epoch_data)
-            trial_index = info['trial_index']
-            if trial_index in label_dict:
-                y_labels.append(label_dict[trial_index])
-                trial_indices.append(trial_index)
-
-    return np.array(X_done), np.array(y_labels), trial_indices
-
-
-# Extract the first n_events reveal events
-epoch_reveal, y_labels_reveal, trial_indices_reveal = extract_reveal(trial_info_valid, raw, label_dict,num_events=4)
-epoch_start, y_labels_start, trial_indices_start = extract_start(trial_info_valid, raw, label_dict)
-epoch_done, y_labels_done, trial_indices_done = extract_done(trial_info_valid, raw, label_dict)
-
-# Find common trial indices across all epochs
-common_trial_indices = set(trial_indices_reveal) & set(trial_indices_start) & set(trial_indices_done)
-
-# Convert to a sorted list to maintain order
-common_trial_indices = sorted(common_trial_indices)
-
-# Function to filter epochs and labels based on common trial indices
-def filter_by_trial_indices(epochs, labels, trial_indices, common_indices):
-    mask = [i for i, idx in enumerate(trial_indices) if idx in common_indices]
-    return epochs[mask], labels[mask]
-
-# Filter each epoch and labels
-epoch_start_filtered, y_labels_start_filtered = filter_by_trial_indices(epoch_start, y_labels_start, trial_indices_start, common_trial_indices)
-epoch_reveal_filtered, y_labels_reveal_filtered = filter_by_trial_indices(epoch_reveal, y_labels_reveal, trial_indices_reveal, common_trial_indices)
-epoch_done_filtered, y_labels_done_filtered = filter_by_trial_indices(epoch_done, y_labels_done, trial_indices_done, common_trial_indices)
-
-# Flatten the reveal epoch to combine the event dimension into the time axis
-n_trials, n_channels, n_timepoints_per_event, n_events = epoch_reveal_filtered.shape
-epoch_reveal_flattened = epoch_reveal_filtered.reshape(n_trials, n_channels, n_timepoints_per_event * n_events)
-
-# Check the new shape
-print(f"Epoch_reveal shape: {epoch_reveal_filtered.shape}")
-print(f"Flattened epoch_reveal shape: {epoch_reveal_flattened.shape}")
-
-# Combine the filtered epochs
-X_combined = np.concatenate((epoch_start_filtered, epoch_reveal_flattened, epoch_done_filtered), axis=2)
-
-# Use the labels from the first filtered epoch (assuming they are the same for all)
-y_combined = y_labels_done_filtered
+extractor = EventExtractor(trial_info_valid, raw, label_dict)
+X_combined, y_combined = extractor.extract_events()
 
 n_time_points = X_combined.shape[2]
 n_classes = len(np.unique(y_combined))
