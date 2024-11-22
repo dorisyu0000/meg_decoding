@@ -33,10 +33,10 @@ label_dir = 'data_log'
 save_dir = 'data_meg'
 raw = mne.io.read_raw_fif(f'{data_dir}/{subj}/{dataqual}/{subj}_{exp}.fif', preload=True)
 bad_channels_dict = {
-    "R2280": ['MEG 015', 'MEG 013', 'MEG 039', 'MEG 064', 'MEG 079', 'MEG 081', 'MEG 083', 'MEG 085', 'MEG 088', 'MEG 095', 'MEG 097', 'MEG 126', 'MEG 124', 'MEG 141'],
-    "R2487": ['MEG 014', 'MEG 068', 'MEG 079', 'MEG 074', 'MEG 147', 'MEG 146'],
-    "R2488": ['MEG 014', 'MEG 068', 'MEG 079', 'MEG 147', 'MEG 146'],
-    "R2490": ['MEG 015', 'MEG 038', 'MEG 059', 'MEG 060', 'MEG 058', 'MEG 063', 'MEG 064', 'MEG 065', 'MEG 074', 'MEG 079', 'MEG 068', 'MEG 156', 'MEG 153']
+    "R2490": ['MEG 014', 'MEG 004', 'MEG 079', 'MEG 072', 'MEG 070', 'MEG 080', 'MEG 074', 'MEG 067', 'MEG 082', 'MEG 105', 'MEG 115', 'MEG 141', 'MEG 153'],
+    "R2488": ['MEG 015', 'MEG 014', 'MEG 068', 'MEG 079', 'MEG 146', 'MEG 147', 'MEG 007', 'MEG 141'],
+    "R2487": ['MEG 015', 'MEG 014', 'MEG 068', 'MEG 079', 'MEG 147', 'MEG 146', 'MEG 004'],
+    "R2280": ['MEG 015', 'MEG 039', 'MEG 077', 'MEG 076', 'MEG 073', 'MEG 079', 'MEG 064', 'MEG 059', 'MEG 070']
 }
 bad_channels = bad_channels_dict.get(subj, [])
 raw.info['bads'].extend(bad_channels)
@@ -146,13 +146,15 @@ for idx, event in enumerate(new_events):
     event_time = start_sample / sfreq
     total_duration = raw.times[-1]
     print(f"Tmax is {tmax}")
+    picks = mne.pick_types(raw.info, meg=True, exclude='bads')
+
     # Create the epoch
     epochs = mne.Epochs(
         raw, [event], event_id={f'event_{event_id_code}': event_id_code},
-        tmin=tmin, tmax=26, preload=True,
+        tmin=tmin, tmax=26, preload=True,picks=picks,
         reject_by_annotation=False, reject=None, verbose=True
     )
-    epochs.pick(picks="meg", exclude="bads")
+
     # Append valid epochs to the list
     if len(epochs) > 0:
         epochs_data_list.append(epochs.get_data()[:, :, ::downsample])
