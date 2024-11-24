@@ -53,8 +53,7 @@ def bad_channel_interpolation(subj):
     return raw
 
 def ica_denoising(subj):
-    # raw = bad_channel_interpolation(subj)
-    raw = mne.io.read_raw_fif('data_meg/R2280_exp_preprocessed.fif', preload=True)
+    raw = bad_channel_interpolation(subj)
     ica = mne.preprocessing.ICA(n_components=0.95, method='fastica')
     print('fitting ica...')
     ica.fit(raw, reject={'mag': 5e-12})

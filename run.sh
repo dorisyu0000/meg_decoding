@@ -9,10 +9,10 @@
 
 
 # List of subjects
-subjects=("R2488" "R2280" "R2490")   # Add more subjects as needed
+subjects=("R2488" "R2280" "R2490" "R2487" "R2210")   # Add more subjects as needed
 
 # Loop over each subject
 for subj in "${subjects[@]}"; do
     echo "Processing subject: $subj"
-    python loc_decoder.py --subject "$subj"
+    python check.py --subject "$subj"
 done

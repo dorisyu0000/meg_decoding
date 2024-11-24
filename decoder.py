@@ -38,7 +38,7 @@ bad_channels_dict = {
     "R2490": ['MEG 014', 'MEG 004', 'MEG 079', 'MEG 072', 'MEG 070', 'MEG 080', 'MEG 074', 'MEG 067', 'MEG 082', 'MEG 105', 'MEG 115', 'MEG 141', 'MEG 153'],
     "R2488": ['MEG 015', 'MEG 014', 'MEG 068', 'MEG 079', 'MEG 146', 'MEG 147', 'MEG 007', 'MEG 141'],
     "R2487": ['MEG 015', 'MEG 014', 'MEG 068', 'MEG 079', 'MEG 147', 'MEG 146', 'MEG 004'],
-    "R2280": ['MEG 015', 'MEG 039', 'MEG 077', 'MEG 076', 'MEG 073', 'MEG 079', 'MEG 064', 'MEG 059', 'MEG 070']
+    "R2280": ['MEG 024', 'MEG 039', 'MEG 079', 'MEG 077', 'MEG 141', 'MEG 073', 'MEG 075', 'MEG 076', 'MEG 064', 'MEG 063', 'MEG 060', 'MEG 059', 'MEG 058']
 }
 bad_channels = bad_channels_dict.get(subj, [])
 raw.info['bads'].extend(bad_channels)
@@ -181,17 +181,11 @@ y = label_encoder.fit_transform(y_labels)
 X = np.array([md.data for md in epochs_data_list])  # Shape: (n_epochs, n_channels, n_times)
 X = X.squeeze(axis=1)
 
-# Print the number of labels and valid trials after matching
-n_labels = len(y_labels)
-n_trials = len(trial_info_valid)
-
-
 extractor = EventExtractor(trial_info_valid, raw, label_dict)
 X_combined, y_combined = extractor.extract_events()
 
 n_time_points = X_combined.shape[2]
 n_classes = len(np.unique(y_combined))
-
 
 def smooth_scores(scores, sigma=2):
     return gaussian_filter1d(scores, sigma=sigma)
@@ -201,7 +195,7 @@ def train_time_decoder(X, y):
     x_len = len(X)
     n_trials = len(y)
     cv = LeaveOneOut()
-    clf = make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000))
+    clf = make_pipeline(StandardScaler(), LogisticRegressionCV(max_iter=1000))
     time_decoding = SlidingEstimator(clf, n_jobs=5, scoring='accuracy')
 
     scores = cross_val_multiscore(time_decoding, X, y, cv=cv, n_jobs=5)

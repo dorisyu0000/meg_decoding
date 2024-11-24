@@ -36,7 +36,7 @@ bad_channels_dict = {
     "R2490": ['MEG 014', 'MEG 004', 'MEG 079', 'MEG 072', 'MEG 070', 'MEG 080', 'MEG 074', 'MEG 067', 'MEG 082', 'MEG 105', 'MEG 115', 'MEG 141', 'MEG 153'],
     "R2488": ['MEG 015', 'MEG 014', 'MEG 068', 'MEG 079', 'MEG 146', 'MEG 147', 'MEG 007', 'MEG 141'],
     "R2487": ['MEG 015', 'MEG 014', 'MEG 068', 'MEG 079', 'MEG 147', 'MEG 146', 'MEG 004'],
-    "R2280": ['MEG 015', 'MEG 039', 'MEG 077', 'MEG 076', 'MEG 073', 'MEG 079', 'MEG 064', 'MEG 059', 'MEG 070']
+    "R2280": ['MEG 024', 'MEG 039', 'MEG 079', 'MEG 077', 'MEG 141', 'MEG 073', 'MEG 075', 'MEG 076', 'MEG 064', 'MEG 063', 'MEG 060', 'MEG 059', 'MEG 058']
 }
 bad_channels = bad_channels_dict.get(subj, [])
 raw.info['bads'].extend(bad_channels)
@@ -236,9 +236,6 @@ for start in range(0, X.shape[2] - window_samples + 1, step_samples):
     
     accuracy = cross_val_score(clf, features, y, cv=cv).mean()
     accuracies.append(accuracy)
-
-# Plot decoding accuracy over time
-import matplotlib.pyplot as plt
 
 time_points = [np.mean(window) / sampling_rate * 1000 for window in time_windows]  # Convert to ms
 plt.plot(time_points, accuracies)
