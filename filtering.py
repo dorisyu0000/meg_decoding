@@ -5,8 +5,8 @@ import mne
 data_dir = 'data_meg'
 save_dir = 'data_meg'
 raws = []
-subj = "R2280"
-exp = 'loc'
+subj = "R2210"
+exp = 'exp'
 dtype = "raw"
 
 def concatenate_raws(subj, dtype):
