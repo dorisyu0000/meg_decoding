@@ -84,6 +84,9 @@ end_events = end_events[end_events[:, 0].argsort()]  # Sort by time
 # Initialize lists to store epochs and labels
 data_list = []
 labels = []
+#Plot ERPs
+ 
+
 
 # Iterate through each start event to create trial information
 for idx, start_event in enumerate(start_events):

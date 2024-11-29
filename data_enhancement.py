@@ -44,8 +44,7 @@ bad_channels = bad_channels_dict.get(subj, [])
 raw = mne.io.read_raw_fif(raw_path).load_data()
 raw.info['bads'].extend(bad_channels)
 reject = dict(mag=5e-12, grad=4000e-13)
-raw.filter(1, 30, fir_design="iir")
-raw.info['bads'].extend(bad_channels)
+raw.filter(1, 30, fir_design="firwin")
 sfreq = raw.info['sfreq']
 downsample = 10
 raw.resample(sfreq / downsample)
@@ -145,7 +144,6 @@ for idx, event in enumerate(start_events):
     tmax = trail_t
     start_sample = event[0]
     event_id_code = event[2]
-    end_sample = trial_info[idx]['end_sample']
     total_duration = raw.times[-1]
     print(f"Tmax is {tmax}")
     # Create the epoch
@@ -163,40 +161,42 @@ for idx, event in enumerate(start_events):
         print(f"Epoch {idx} was dropped.")
         print(f"Drop log for Epoch {idx}: {epochs.drop_log}")
 
-def create_sliding_windows(X, window_size, step_size):
+def augment_with_sliding_vectors(X, shifts):
     """
-    Creates overlapping windows for data augmentation.
+    Augments the data by creating shifted versions of the time points.
 
     Parameters:
     - X: ndarray of shape (n_epochs, n_channels, n_time_points)
-    - window_size: int, size of the window in samples
-    - step_size: int, step size for sliding window in samples
+    - shifts: list of integers, number of time points to shift (positive or negative).
 
     Returns:
-    - X_augmented: ndarray of shape (n_new_epochs, n_channels, window_size)
+    - X_augmented: ndarray of shape (n_augmented_epochs, n_channels, n_time_points)
     """
-    n_epochs, n_channels, n_time_points = X.shape
-    windows = []
+    X_augmented = []
+    for shift in shifts:
+        if shift > 0:
+            # Shift forward
+            X_shifted = np.pad(X[:, :, :-shift], ((0, 0), (0, 0), (shift, 0)), mode='constant')
+        elif shift < 0:
+            # Shift backward
+            X_shifted = np.pad(X[:, :, -shift:], ((0, 0), (0, 0), (0, -shift)), mode='constant')
+        else:
+            # No shift
+            X_shifted = X
+        X_augmented.append(X_shifted)
 
-    # Loop through epochs
-    for epoch in range(n_epochs):
-        # Create sliding windows for each epoch
-        for start in range(0, n_time_points - window_size + 1, step_size):
-            end = start + window_size
-            windows.append(X[epoch, :, start:end])  # Extract window
-
-    # Convert list to ndarray
-    return np.array(windows)
+    return np.concatenate(X_augmented, axis=0)
 
 
 def train_time_decoder(X, y):
     cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-    clf = make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000))
-    time_decoding = SlidingEstimator(clf, n_jobs=5, scoring='roc_auc')
+    clf = make_pipeline(StandardScaler(), LogisticRegressionCV(max_iter=1000))
+    time_decoding = SlidingEstimator(clf, n_jobs=5, scoring='accuracy')
     scores = cross_val_multiscore(time_decoding, X, y, cv=cv, n_jobs=5)
     np.save(f'output/{subj}_decoding.npy', scores)
     print(f"Scores shape: {scores.shape}")
     scores_mean = np.mean(scores, axis=0)
+    print(f"Scores mean shape: {scores_mean.shape}")
     return scores_mean  
 
 # Convert the filtered epochs data to a numpy array
@@ -222,13 +222,15 @@ for info in trial_info_valid:
 # Convert labels to integers using label encoder
 y_labels = label_encoder.fit_transform(y_labels)
 
-window_size = 100
-step_size = 10
-X_augmented = create_sliding_windows(X, window_size, step_size)
-n_windows_per_epoch = (X.shape[2] - window_size) // step_size + 1
-y_augmented = np.repeat(y_labels, n_windows_per_epoch)
+shifts = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5]
 
-print(f"X_augmented shape: {X_augmented.shape}")
-print(f"y_augmented shape: {y_augmented.shape}")
+# Augment data with surrounding time points
+X_augmented = augment_with_sliding_vectors(X, shifts)
+
+# Duplicate labels for augmented data
+y_augmented = np.tile(y_labels, len(shifts))
+
+print(f"Original X shape: {X.shape}, Augmented X shape: {X_augmented.shape}")
+print(f"Original y shape: {y_labels.shape}, Augmented y shape: {y_augmented.shape}")
 
 train_time_decoder(X_augmented, y_augmented)
