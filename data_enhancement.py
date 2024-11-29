@@ -20,14 +20,11 @@ from sklearn.metrics import accuracy_score
 from scipy.ndimage import gaussian_filter1d
 import argparse
 from util import EventExtractor
-# Parse command-line arguments
-# parser = argparse.ArgumentParser(description='Process MEG data for a specific subject.')
-# parser.add_argument('--subject', type=str, required=True, help='Subject identifier')
-# args = parser.parse_args()
 
-# # Use the subject from the command-line argument
-# subj = args.subject
-subj = 'R2490'
+parser = argparse.ArgumentParser(description='Process MEG data for a specific subject.')
+parser.add_argument('--subject', type=str, required=True, help='Subject identifier')
+args = parser.parse_args()
+subj = args.subject
 data_dir = 'data_meg'
 dataqual = 'prepro' #or loc/exp
 exp = 'exp' #or exp
@@ -43,26 +40,15 @@ bad_channels_dict = {
 }
 bad_channels = bad_channels_dict.get(subj, [])
 
+# Load raw data
 raw = mne.io.read_raw_fif(raw_path).load_data()
 raw.info['bads'].extend(bad_channels)
 reject = dict(mag=5e-12, grad=4000e-13)
-raw.filter(1, 30, fir_design="firwin")
+raw.filter(1, 30, fir_design="iir")
 raw.info['bads'].extend(bad_channels)
 sfreq = raw.info['sfreq']
 downsample = 10
 raw.resample(sfreq / downsample)
-# raw.drop_channels(bad_channels)
-
-# Initialize lists to store individual epochs data and trial information
-tmin = -0.2  
-epochs_data_list = []
-trial_info_valid = []
-sfreq = raw.info['sfreq']
-raw.filter(1, 40, method='iir')
-downsample = 10
-raw.resample(sfreq / downsample)
-
-trail_t = 21
 
 events = mne.find_events(raw, stim_channel='STI 014', output='onset', shortest_event=1)
 event_id = {
@@ -75,11 +61,8 @@ event_id = {
     'timeout': 166
 }
 
-# Initialize a list to store trial information
-trial_info = []
-previous_start_sample = None
-processed_starts = set()
-start_idx = 0
+# Define trials to remove
+trials_to_remove = []
 start_events = events[events[:, 2] == event_id['start']]
 done_events = events[events[:, 2] == event_id['done']]
 timeout_events = events[events[:, 2] == event_id['timeout']]
@@ -89,13 +72,17 @@ sfreq = raw.info['sfreq']  # Sampling frequency
 
 # Combine 'done' and 'timeout' events
 end_events = np.concatenate((done_events, timeout_events))
-end_events = end_events[end_events[:, 0].argsort()]  # Sort by time
+end_events = end_events[end_events[:, 0].argsort()] 
 
-
-# Combine 'done' and 'timeout' events
-end_events = np.concatenate((done_events, timeout_events))
-end_events = end_events[end_events[:, 0].argsort()]  # Sort by time
-
+# Initialize a list to store trial information
+trial_info = []
+previous_start_sample = None
+processed_starts = set()
+start_idx = 0
+if subj == 'R2487':
+    trail_t = 21
+else:
+    trail_t = 25
 # Iterate through each start event to create trial information
 for idx, start_event in enumerate(start_events):
     start_sample = start_event[0]
@@ -138,6 +125,7 @@ for idx, start_event in enumerate(start_events):
             'done': len(done_events) > 0,
             'start_times': start_sample / sfreq,
             'done_times': end_sample / sfreq,
+            'end_sample': end_sample,
             'reveal_red': len(reveal_red_within_trial) > 0,  # Boolean flag indicating if 'reveal_red' occurred
             'reveal_red_times': (reveal_red_within_trial[:, 0] - start_sample) / sfreq if len(reveal_red_within_trial) > 0 else [],
             'reveal_white': len(reveal_white_within_trial) > 0,  # Boolean flag indicating if 'reveal_white' occurred
@@ -148,98 +136,99 @@ for idx, start_event in enumerate(start_events):
             )
         })
         start_idx += 1
-new_events = np.array([[info['event_sample'], 0, event_id['start']] for info in trial_info])
 
-# Iterate over new_events and create epochs, skipping the unwanted trials
-for idx, event in enumerate(new_events):
+epochs_data_list = []
+trial_info_valid = []
+
+for idx, event in enumerate(start_events):
+    tmin = -0.2
+    tmax = trail_t
     start_sample = event[0]
     event_id_code = event[2]
-    event_time = start_sample / sfreq
+    end_sample = trial_info[idx]['end_sample']
     total_duration = raw.times[-1]
     print(f"Tmax is {tmax}")
-    picks = mne.pick_types(raw.info, meg=True, exclude='bads')
-
     # Create the epoch
+    picks = mne.pick_types(raw.info, meg=True, exclude='bads')
     epochs = mne.Epochs(
         raw, [event], event_id={f'event_{event_id_code}': event_id_code},
-        tmin=tmin, tmax=trail_t, preload=True,picks=picks,
-        reject_by_annotation=False, reject=None, verbose=True
+        tmin=tmin, tmax=tmax, preload=True,
+        reject_by_annotation=False, reject=None, verbose=True, picks=picks
     )
-    # Append valid epochs to the list
+    
     if len(epochs) > 0:
-        epochs_data_list.append(epochs.get_data()[:, :, ::downsample])
+        epochs_data_list.append(epochs.get_data())
         trial_info_valid.append(trial_info[idx])
     else:
         print(f"Epoch {idx} was dropped.")
         print(f"Drop log for Epoch {idx}: {epochs.drop_log}")
 
+def create_sliding_windows(X, window_size, step_size):
+    """
+    Creates overlapping windows for data augmentation.
 
-#Load labels
-label_encoder = LabelEncoder()
+    Parameters:
+    - X: ndarray of shape (n_epochs, n_channels, n_time_points)
+    - window_size: int, size of the window in samples
+    - step_size: int, step size for sliding window in samples
+
+    Returns:
+    - X_augmented: ndarray of shape (n_new_epochs, n_channels, window_size)
+    """
+    n_epochs, n_channels, n_time_points = X.shape
+    windows = []
+
+    # Loop through epochs
+    for epoch in range(n_epochs):
+        # Create sliding windows for each epoch
+        for start in range(0, n_time_points - window_size + 1, step_size):
+            end = start + window_size
+            windows.append(X[epoch, :, start:end])  # Extract window
+
+    # Convert list to ndarray
+    return np.array(windows)
+
+
+def train_time_decoder(X, y):
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    clf = make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000))
+    time_decoding = SlidingEstimator(clf, n_jobs=5, scoring='roc_auc')
+    scores = cross_val_multiscore(time_decoding, X, y, cv=cv, n_jobs=5)
+    np.save(f'output/{subj}_decoding.npy', scores)
+    print(f"Scores shape: {scores.shape}")
+    scores_mean = np.mean(scores, axis=0)
+    return scores_mean  
+
+# Convert the filtered epochs data to a numpy array
+X = np.array([md.data for md in epochs_data_list])  # Shape: (n_epochs, n_channels, n_times)
+X = X.squeeze(axis=1)
 labels_df = pd.read_csv(f'data_log/{subj}/label.csv')
+# Step 1: Get the valid trial indices
 valid_trial_indices = {info['trial_index'] for info in trial_info_valid}
+
+# Step 2: Filter labels_df to only include valid trial indices
 labels_df_filtered = labels_df[labels_df['trial_index'].isin(valid_trial_indices)]
+
+# Create a mapping from trial_index to label using the filtered labels_df
 label_dict = dict(zip(labels_df_filtered['trial_index'], labels_df_filtered['trial.rule']))
+
+# Step 3: Extract labels for the valid trials in trial_info_valid
 y_labels = []
 for info in trial_info_valid:
     idx = info['trial_index']
     if idx in label_dict:
         y_labels.append(label_dict[idx])
+
+# Convert labels to integers using label encoder
 y_labels = label_encoder.fit_transform(y_labels)
-n_labels = len(y_labels)
-n_trials = len(trial_info_valid)
-print(f"Number of labels after matching: {n_labels}")
-print(f"Number of valid trials after matching: {n_trials}")
 
-extractor = EventExtractor(trial_info_valid, raw, label_dict)
-X_combined, y_combined = extractor.extract_events()
+window_size = 100
+step_size = 10
+X_augmented = create_sliding_windows(X, window_size, step_size)
+n_windows_per_epoch = (X.shape[2] - window_size) // step_size + 1
+y_augmented = np.repeat(y_labels, n_windows_per_epoch)
 
-X = X_combined
-y_labels = label_encoder.fit_transform(y_combined)
-# Filter indices where y_labels is 0 or 1
+print(f"X_augmented shape: {X_augmented.shape}")
+print(f"y_augmented shape: {y_augmented.shape}")
 
-combinations = [2,1]
-
-valid_indices = [i for i, label in enumerate(y_labels) if label in combinations]
-
-X_filtered = X[valid_indices]
-y_labels_filtered = y_labels[valid_indices]
-
-print(f"Number of labels after filtering: {len(y_labels_filtered)}")
-print(f"Number of trials after filtering: {len(X_filtered)}")
-n_time_points = X_filtered.shape[2]
-n_classes = len(np.unique(y_labels_filtered))
-
-def smooth_scores(scores, sigma=2):
-    return gaussian_filter1d(scores, sigma=sigma)
-
-def train_time_decoder(X, y):
-        # Train the time decoder on the entire dataset
-    x_len = len(X)
-    n_trials = len(y)
-    cv = LeaveOneOut()
-    clf = make_pipeline(StandardScaler(), LogisticRegressionCV(max_iter=1000))
-    time_decoding = SlidingEstimator(clf, n_jobs=5, scoring='accuracy')
-
-    scores = cross_val_multiscore(time_decoding, X, y, cv=cv, n_jobs=5)
-    np.save(f'output/{subj}_{combinations}_decoder.npy', scores)
-    print(f"Scores shape: {scores.shape}")
-    scores_mean = np.mean(scores, axis=0)
-    return scores_mean
-
-
-# Function to perform time decoding and plot results for two sets of trials
-def plot_time_decoding(scores_mean,title, subj):
-    n_time_points = scores_mean.shape[0]
-    scores_mean = smooth_scores(scores_mean)
-    plt.plot(np.arange(n_time_points), scores_mean)
-    plt.axhline(1/n_classes, color='k', linestyle='--', label='chance')
-    plt.xlabel('Time Points')
-    plt.ylabel('Accuracy')
-    plt.suptitle(title)
-    plt.tight_layout()
-    plt.show()
-    plt.savefig(f'output/{subj}_time_decoding_{n_time_points}.png')
-
-scores_mean = train_time_decoder(X_filtered, y_labels_filtered)
-plot_time_decoding(scores_mean, f'Time Decoding {combinations}', subj = subj)
+train_time_decoder(X_augmented, y_augmented)

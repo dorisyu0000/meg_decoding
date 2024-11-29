@@ -7,43 +7,31 @@ class EventExtractor:
         self.label_dict = label_dict
         self.sfreq = raw.info['sfreq']  # Sampling frequency
         self.picks = mne.pick_types(raw.info, meg=True, exclude='bads')
-        
-    def extract_reveal(self, event_name='reveal_red', n_points_before=50, n_points_after=50, num_events=4):
+
+    def extract_reveal(self, event_name='reveal_red', n_points_before=50, n_points_after=50, num_events=2):
         y_labels = []
         X_reveal = []
         trial_indices = []
+        sfreq = self.raw.info['sfreq']  # Sampling frequency
 
         for info in self.trial_info_valid:
             reveal_times = info[f'{event_name}_times']
             if len(reveal_times) >= num_events:
-                trial_data = []
+                X_reveal = []
 
-                for event_time in reveal_times[:num_events]:
-                    event_sample = int(event_time * self.sfreq)
-                    start_sample_before = event_sample - n_points_before
-                    end_sample_after = event_sample + n_points_after
+            for event_time in reveal_times[:num_events]:
+                event_sample = int(event_time * sfreq)
+                start_sample_before = event_sample - n_points_before
+                end_sample_after = event_sample + n_points_after
 
-                    if start_sample_before >= 0 and end_sample_after <= self.raw.n_times:
-                        epoch_data = self.raw.get_data(start=start_sample_before, stop=end_sample_after, picks=self.picks)
-                        
-                        # Ensure epoch_data is 3D
-                        if epoch_data.ndim == 2:
-                            epoch_data = np.expand_dims(epoch_data, axis=2)
-                        
-                        trial_data.append(epoch_data)
+                if start_sample_before >= 0 and end_sample_after <= self.raw.n_times:
+                    epoch_data = self.raw.get_data(start=start_sample_before, stop=end_sample_after,picks=self.picks)
+                    X_reveal.append(epoch_data)
+                    trial_index = info['trial_index']
+                    if trial_index in self.label_dict:
+                        y_labels.append(self.label_dict[trial_index])
+                        trial_indices.append(trial_index)
 
-                if trial_data:
-                    # Check if all trial_data have the same shape
-                    trial_data_shapes = [data.shape for data in trial_data]
-                    if len(set(trial_data_shapes)) == 1:
-                        trial_data_concatenated = np.concatenate(trial_data, axis=2)
-                        X_reveal.append(trial_data_concatenated)
-                        trial_index = info['trial_index']
-                        if trial_index in self.label_dict:
-                            y_labels.append(self.label_dict[trial_index])
-                            trial_indices.append(trial_index)
-                    else:
-                        print(f"Inconsistent shapes in trial data for trial index {info['trial_index']}: {trial_data_shapes}")
 
         return np.array(X_reveal), np.array(y_labels), trial_indices
 
@@ -58,7 +46,7 @@ class EventExtractor:
             end_sample_after = start_sample + n_points_after
 
             if start_sample_before >= 0 and end_sample_after <= self.raw.n_times:
-                epoch_data = self.raw.get_data(start=start_sample_before, stop=end_sample_after)
+                epoch_data = self.raw.get_data(start=start_sample_before, stop=end_sample_after, picks=self.picks)
                 X_start.append(epoch_data)
                 trial_index = info['trial_index']
                 if trial_index in self.label_dict:
@@ -87,7 +75,7 @@ class EventExtractor:
                 end_sample_after = int(done_time * self.sfreq) + n_points_after
 
             if start_sample_before >= 0 and end_sample_after <= self.raw.n_times:
-                epoch_data = self.raw.get_data(start=start_sample_before, stop=end_sample_after)
+                epoch_data = self.raw.get_data(start=start_sample_before, stop=end_sample_after, picks=self.picks)
                 X_done.append(epoch_data)
                 trial_index = info['trial_index']
                 if trial_index in self.label_dict:
@@ -104,7 +92,8 @@ class EventExtractor:
         epoch_reveal, y_labels_reveal, trial_indices_reveal = self.extract_reveal()
         epoch_start, y_labels_start, trial_indices_start = self.extract_start()
         epoch_done, y_labels_done, trial_indices_done = self.extract_done()
-
+        print(len(trial_indices_reveal), len(trial_indices_start), len(trial_indices_done))
+        print(epoch_reveal.shape, epoch_start.shape, epoch_done.shape)
         common_trial_indices = set(trial_indices_reveal) & set(trial_indices_start) & set(trial_indices_done)
         common_trial_indices = sorted(common_trial_indices)
 
