@@ -73,6 +73,18 @@ sfreq = raw.info['sfreq']  # Sampling frequency
 end_events = np.concatenate((done_events, timeout_events))
 end_events = end_events[end_events[:, 0].argsort()] 
 
+filtered_start_events = [start_events[0]]  # Start with the first event
+
+# Check for at least 3 seconds between each done event
+for i in range(1, len(start_events)):
+    time_diff = (start_events[i, 0] - start_events[i-1, 0]) / sfreq
+    if time_diff < 2:
+        print(f"Warning: Less than 3 seconds between done events at indices {i-1} and {i}")
+    
+    else:
+        filtered_start_events.append(start_events[i])
+start_events = filtered_start_events
+
 # Initialize a list to store trial information
 trial_info = []
 previous_start_sample = None
@@ -193,41 +205,41 @@ def train_time_decoder(X, y):
     clf = make_pipeline(StandardScaler(), LogisticRegressionCV(max_iter=1000))
     time_decoding = SlidingEstimator(clf, n_jobs=5, scoring='accuracy')
     scores = cross_val_multiscore(time_decoding, X, y, cv=cv, n_jobs=5)
-    np.save(f'output/{subj}_decoding.npy', scores)
+    np.save(f'output/{subj}/{subj}_decoding.npy', scores)
     print(f"Scores shape: {scores.shape}")
     scores_mean = np.mean(scores, axis=0)
     print(f"Scores mean shape: {scores_mean.shape}")
     return scores_mean  
 
 # Convert the filtered epochs data to a numpy array
-X = np.array([md.data for md in epochs_data_list])  # Shape: (n_epochs, n_channels, n_times)
-X = X.squeeze(axis=1)
+# X = np.array([md.data for md in epochs_data_list])  # Shape: (n_epochs, n_channels, n_times)
+# X = X.squeeze(axis=1)
 labels_df = pd.read_csv(f'data_log/{subj}/label.csv')
-# Step 1: Get the valid trial indices
+
 valid_trial_indices = {info['trial_index'] for info in trial_info_valid}
 
-# Step 2: Filter labels_df to only include valid trial indices
 labels_df_filtered = labels_df[labels_df['trial_index'].isin(valid_trial_indices)]
 
 # Create a mapping from trial_index to label using the filtered labels_df
 label_dict = dict(zip(labels_df_filtered['trial_index'], labels_df_filtered['trial.rule']))
 
-# Step 3: Extract labels for the valid trials in trial_info_valid
-y_labels = []
-for info in trial_info_valid:
-    idx = info['trial_index']
-    if idx in label_dict:
-        y_labels.append(label_dict[idx])
+# y_labels = []
+# for info in trial_info_valid:
+#     idx = info['trial_index']
+#     if idx in label_dict:
+#         y_labels.append(label_dict[idx])
 
-# Convert labels to integers using label encoder
-y_labels = label_encoder.fit_transform(y_labels)
+# # Convert labels to integers using label encoder
+# y_labels = label_encoder.fit_transform(y_labels)
+
+extractor = EventExtractor(trial_info_valid, raw, label_dict)
+X, y_labels = extractor.extract_events()
 
 shifts = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5]
 
 # Augment data with surrounding time points
 X_augmented = augment_with_sliding_vectors(X, shifts)
 
-# Duplicate labels for augmented data
 y_augmented = np.tile(y_labels, len(shifts))
 
 print(f"Original X shape: {X.shape}, Augmented X shape: {X_augmented.shape}")
