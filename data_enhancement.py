@@ -219,7 +219,7 @@ def train_time_decoder(X, y):
     clf = make_pipeline(StandardScaler(), LogisticRegressionCV(max_iter=1000))
     time_decoding = SlidingEstimator(clf, n_jobs=5, scoring='accuracy')
     scores = cross_val_multiscore(time_decoding, X, y, cv=cv, n_jobs=5)
-    np.save(f'output/{subj}/{subj}_decoding.npy', scores)
+    np.save(f'output/{subj}/{subj}_decoding_l4.npy', scores)
     print(f"Scores shape: {scores.shape}")
     scores_mean = np.mean(scores, axis=0)
     print(f"Scores mean shape: {scores_mean.shape}")
@@ -227,8 +227,9 @@ def train_time_decoder(X, y):
 
 
 # Convert the filtered epochs data to a numpy array
-X = np.array([md.data for md in epochs_array])   # Shape: (n_epochs, n_channels, n_times)
+# X = np.array([md.data for md in epochs_array])   # Shape: (n_epochs, n_channels, n_times)
 # X = X.squeeze(axis=1)
+
 labels_df = pd.read_csv(f'data_log/{subj}/label.csv')
 
 valid_trial_indices = {info['trial_index'] for info in trial_info_valid}
@@ -238,17 +239,17 @@ labels_df_filtered = labels_df[labels_df['trial_index'].isin(valid_trial_indices
 # Create a mapping from trial_index to label using the filtered labels_df
 label_dict = dict(zip(labels_df_filtered['trial_index'], labels_df_filtered['trial.rule']))
 
-y_labels = []
-for info in trial_info_valid:
-    idx = info['trial_index']
-    if idx in label_dict:
-        y_labels.append(label_dict[idx])
+# y_labels = []
+# for info in trial_info_valid:
+#     idx = info['trial_index']
+#     if idx in label_dict:
+#         y_labels.append(label_dict[idx])
 
-# Convert labels to integers using label encoder
-y_labels = label_encoder.fit_transform(y_labels)
+# # Convert labels to integers using label encoder
+# y_labels = label_encoder.fit_transform(y_labels)
 
-# extractor = EventExtractor(trial_info_valid, raw, label_dict)
-# X, y_labels = extractor.extract_events()
+extractor = EventExtractor(trial_info_valid, raw, label_dict)
+X, y_labels = extractor.extract_events()
 
 shifts = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5]
 
