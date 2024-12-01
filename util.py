@@ -20,7 +20,7 @@ class EventExtractor:
             if len(reveal_times) >= num_events:
                 trial_data = []
 
-                for event_time in reveal_times[:num_events]:
+                for event_time in reveal_times[-num_events:]:
                     event_sample = int(event_time * sfreq)
                     start_sample_before = event_sample - n_points_before
                     end_sample_after = event_sample + n_points_after
@@ -51,30 +51,26 @@ class EventExtractor:
         return np.array(X_reveal), np.array(y_labels), trial_indices
 
     def extract_start(self, n_points_before=50, n_points_after=50):
-            X_start = []
-            y_labels = []
-            trial_indices = []
-            for info in self.trial_info_valid:
-                # Get the done sample from the trial information
-                start_sample = info['event_sample'] * self.raw.info['sfreq']
+        X_start = []
+        y_labels = []
+        trial_indices = []
+        for info in self.trial_info_valid:
+            start_sample = info['event_sample']
+            start_sample_before = start_sample - n_points_before
+            end_sample_after = start_sample + n_points_after
 
-                # Calculate start and end samples for extraction
-                start_sample_before = start_sample - n_points_before
-                end_sample_after = start_sample + n_points_after
+            # Ensure the samples are within bounds
+            if start_sample_before >= 0 and end_sample_after <= self.raw.n_times:
+                # Extract data for this trial
+                picks = mne.pick_types(self.raw.info, meg=True, exclude='bads')
+                epoch_data = self.raw.get_data(start=start_sample_before, stop=end_sample_after,picks=picks)
+                X_start.append(epoch_data)
+                trial_index = info['trial_index']
+                if trial_index in self.label_dict:
+                    y_labels.append(self.label_dict[trial_index])
+                    trial_indices.append(trial_index)
 
-                # Ensure the samples are within bounds
-                if start_sample_before >= 0 and end_sample_after <= self.raw.n_times:
-                    # Extract data for this trial
-                    picks = mne.pick_types(self.raw.info, meg=True, exclude='bads')
-                    epoch_data = self.raw.get_data(start=start_sample_before, stop=end_sample_after,picks=picks)
-                        
-                    X_start.append(epoch_data)
-                    trial_index = info['trial_index']
-                    if trial_index in self.label_dict:
-                        y_labels.append(self.label_dict[trial_index])
-                        trial_indices.append(trial_index)
-
-            return  np.array(X_start), np.array(y_labels), trial_indices
+        return np.array(X_start), np.array(y_labels), trial_indices
 
 
     def extract_done(self, n_points_before=50, n_points_after=50):
@@ -89,7 +85,7 @@ class EventExtractor:
             # Check if the "done" event exists
             done_time = info['done_times'] 
             start_time = info['start_times']
-            print(f"Trial_index: {info['trial_index']}, Done time: {done_time}, Start time: {start_time}")
+            
             if int(done_time) - int(start_time) > 25:  # Assuming these indicate the presence of a "done" event
                 done_sample = info['event_sample'] + int((info['tmax'] - 1.0) * sfreq)
                 start_sample_before = done_sample - n_points_before

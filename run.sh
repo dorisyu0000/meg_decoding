@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --nodes 2
+#SBATCH --nodes 4
 #SBATCH --time 12:00:00
 #SBATCH --mem-per-cpu=64G
 #SBATCH --cpus-per-task=4
@@ -14,4 +14,5 @@ for subj in "${subjects[@]}"; do
     srun --exclusive -n 1 python data_enhancement.py --subject "$subj" &
 done
 wait
+
 

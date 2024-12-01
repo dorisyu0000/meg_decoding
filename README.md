@@ -24,7 +24,7 @@ $ mne kit2fiff
 This includes band-pass filtering, interpolating bad channels, ICA, and SSP.
 ```bash
 $ conda activate meg
-$ python filtering.py
+$ python preprocessing.py
 ```
 
 ## Decoding

@@ -5,8 +5,8 @@ import mne
 data_dir = 'data_meg'
 save_dir = 'data_meg'
 raws = []
-subj = "R2210"
-exp = 'exp'
+subj = "R2280"
+exp = 'loc'
 dtype = "raw"
 
 def concatenate_raws(subj, dtype):
@@ -26,7 +26,6 @@ def concatenate_raws(subj, dtype):
     if raws:  # Check if raws is not empty
         raw = mne.concatenate_raws(raws)
         raw.filter(1, 40, method='iir')
-        
         return raw
     
 
