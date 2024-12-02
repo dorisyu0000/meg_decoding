@@ -21,11 +21,11 @@ from scipy.ndimage import gaussian_filter1d
 import argparse
 from util import EventExtractor
 
-# parser = argparse.ArgumentParser(description='Process MEG data for a specific subject.')
-# parser.add_argument('--subject', type=str, required=True, help='Subject identifier')
-# args = parser.parse_args()
-# subj = args.subject
-subj = 'R2487'
+parser = argparse.ArgumentParser(description='Process MEG data for a specific subject.')
+parser.add_argument('--subject', type=str, required=True, help='Subject identifier')
+args = parser.parse_args()
+subj = args.subject
+# subj = 'R2487'
 data_dir = 'data_meg'
 dataqual = 'prepro' #or loc/exp
 exp = 'exp' #or exp
@@ -155,7 +155,7 @@ picks = mne.pick_types(raw.info, meg=True, exclude='bads')
 
 for trial in trial_info:
     end_sample = trial['end_sample']
-    start_sample = end_sample - int(sfreq * 6) # 0.2 second before end_sample
+    start_sample = end_sample - int(sfreq * 10) # 0.2 second before end_sample
     if start_sample < 0:
         start_sample = 0  # Ensure start_sample is not negative
 
@@ -219,7 +219,7 @@ def train_time_decoder(X, y):
     clf = make_pipeline(StandardScaler(), LogisticRegressionCV(max_iter=1000))
     time_decoding = SlidingEstimator(clf, n_jobs=5, scoring='accuracy')
     scores = cross_val_multiscore(time_decoding, X, y, cv=cv, n_jobs=5)
-    np.save(f'output/{subj}/{subj}_decoding_l4.npy', scores)
+    np.save(f'output/{subj}/{subj}_decoding_10ms.npy', scores)
     print(f"Scores shape: {scores.shape}")
     scores_mean = np.mean(scores, axis=0)
     print(f"Scores mean shape: {scores_mean.shape}")
@@ -227,7 +227,7 @@ def train_time_decoder(X, y):
 
 
 # Convert the filtered epochs data to a numpy array
-# X = np.array([md.data for md in epochs_array])   # Shape: (n_epochs, n_channels, n_times)
+X = np.array([md.data for md in epochs_array])   # Shape: (n_epochs, n_channels, n_times)
 # X = X.squeeze(axis=1)
 
 labels_df = pd.read_csv(f'data_log/{subj}/label.csv')
@@ -239,17 +239,17 @@ labels_df_filtered = labels_df[labels_df['trial_index'].isin(valid_trial_indices
 # Create a mapping from trial_index to label using the filtered labels_df
 label_dict = dict(zip(labels_df_filtered['trial_index'], labels_df_filtered['trial.rule']))
 
-# y_labels = []
-# for info in trial_info_valid:
-#     idx = info['trial_index']
-#     if idx in label_dict:
-#         y_labels.append(label_dict[idx])
+y_labels = []
+for info in trial_info_valid:
+    idx = info['trial_index']
+    if idx in label_dict:
+        y_labels.append(label_dict[idx])
 
-# # Convert labels to integers using label encoder
-# y_labels = label_encoder.fit_transform(y_labels)
+# Convert labels to integers using label encoder
+y_labels = label_encoder.fit_transform(y_labels)
 
-extractor = EventExtractor(trial_info_valid, raw, label_dict)
-X, y_labels = extractor.extract_events()
+# extractor = EventExtractor(trial_info_valid, raw, label_dict)
+# X, y_labels = extractor.extract_events()
 
 shifts = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5]
 
