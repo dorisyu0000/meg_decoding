@@ -24,8 +24,13 @@ from mne.datasets import sample
 from mne.preprocessing import ICA
 import pickle
 
+import argparse
+
+parser = argparse.ArgumentParser(description='Process MEG data for a specific subject.')
+parser.add_argument('--subject', type=str, required=True, help='Subject identifier')
+args = parser.parse_args()
+subj = args.subject
 data_dir = 'data_meg'
-subj = "R2487"
 dataqual = 'prepro' #or loc/exp
 exp = 'exp' #or exp
 dtype = "raw"
@@ -215,13 +220,17 @@ for idx, start_event in enumerate(start_events):
 end_events = np.concatenate((done_events, timeout_events))
 end_events = end_events[end_events[:, 0].argsort()]  # Sort by time
 
+
 # Initialize a list to store trial information
 trial_info = []
 reveal_red_info = []
 previous_start_sample = None
 processed_starts = set()
 start_idx = 0
-trial_duration = 25  # Maximum duration of a trial in seconds
+if subj == "R2487":
+    trial_duration = 21  # Maximum duration of a trial in seconds
+else:
+    trial_duration = 26  # Maximum duration of a trial in seconds
 
 # Iterate through each start event to create trial information
 for idx, start_event in enumerate(start_events):
@@ -254,6 +263,15 @@ for idx, start_event in enumerate(start_events):
         reveal_red_within_trial = reveal_red_events[
             (reveal_red_events[:, 0] > start_sample) & (reveal_red_events[:, 0] < end_sample)
         ]
+        reveal_red_info.append(
+            {
+                'trial_index': start_idx,
+                'sequence_index': -1,
+                'event_sample': end_sample,
+                'time_from_start': (end_sample - start_sample) / sfreq,  # Start of the trial
+                'label': 'end'
+            }
+        )
         reveal_red_info.append({
             'trial_index': start_idx,
             'sequence_index': 0,
@@ -261,6 +279,8 @@ for idx, start_event in enumerate(start_events):
             'time_from_start': 0.0,  # Start of the trial
             'label': 'start'
         })
+        
+
         # Add sequential indices to each reveal_red event
         for seq_idx, reveal_red in enumerate(reveal_red_within_trial, start=1):
             
@@ -297,6 +317,14 @@ for idx, start_event in enumerate(start_events):
             )
         })
         start_idx += 1
+
+trial_info_df = pd.DataFrame(trial_info)
+reveal_red_info_df = pd.DataFrame(reveal_red_info)
+
+# # Display results
+# print(trial_info_df.head())
+print(reveal_red_info_df.head())
+
 
 trial_info_df = pd.DataFrame(trial_info)
 reveal_red_info_df = pd.DataFrame(reveal_red_info)
@@ -345,6 +373,17 @@ response_locked_df = pd.DataFrame(response_locked_info)
 # Display results
 print("Response-Locked Epochs Shape:", epochs_array.shape)
 print("Response-Locked Metadata:")
+
+
+# Convert epoch data to a 3D NumPy array
+epochs_array = np.stack(epochs_data)  # Shape: (n_epochs, n_channels, n_time_points)
+
+# Convert metadata to a DataFrame
+response_locked_df = pd.DataFrame(response_locked_info)
+
+# Display results
+print("Response-Locked Epochs Shape:", epochs_array.shape)
+print("Response-Locked Metadata:")
 print(response_locked_df.tail())
 
 labels_df = pd.read_csv(f'data_log/{subj}/label.csv')
@@ -368,12 +407,11 @@ y_labels = label_encoder.fit_transform(y_labels)
 
 response_locked_df['trial_label'] = response_locked_df['trial_index'].map(label_dict)
 
-
 # Initialize a dictionary to save cross-validation scores for all sequences
 sequence_scores = {}
 
 # Step through each sequence index
-for seq_idx in range(6):  # Assuming sequence_index ranges from 0 to 5
+for seq_idx in range(-1,6):  # Assuming sequence_index ranges from -1 to 5
     print(f"Training Decoder for Sequence Index {seq_idx}")
     
     # Filter data for the current sequence_index
@@ -411,59 +449,13 @@ for seq_idx in range(6):  # Assuming sequence_index ranges from 0 to 5
     else:
         print(f"Skipping Sequence Index {seq_idx} (only one class present)")
 
-import pickle
-with open(f"output/{subj}/sequence_scoresCV_{subj}.pkl", "wb") as f:
-    pickle.dump(sequence_scores, f)
 
-print(f"Cross-validation scores saved to 'sequence_scoresCV_{subj}.pkl'.")
+output_dir = f"output/{subj}"
+os.makedirs(output_dir, exist_ok=True)
 
+# Open the file in write-binary mode to overwrite if it exists
+with open(f"{output_dir}/sequence_scoresCV_{subj}.npy", "wb") as f:
+    np.save(f, sequence_scores)
 
-# Initialize a dictionary to save majority vote cross-validation scores for all sequences
-majority_vote_scores = {}
+print(f"Cross-validation scores saved to 'sequence_scoresCV_{subj}.npy'.")
 
-# Step through each sequence index
-for seq_idx in range(6):  # Assuming sequence_index ranges from 0 to 5
-    print(f"Training Decoder for Sequence Index {seq_idx}")
-    
-    # Filter data for the current sequence_index
-    idx_filter = response_locked_df['sequence_index'] == seq_idx
-    X_train = epochs_array[idx_filter.values]
-    y_train = response_locked_df.loc[idx_filter, 'trial_label'].values
-    
-    if len(np.unique(y_train)) > 1:  # Ensure at least two classes for classification
-        # Cross-validation
-        cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-        clf = make_pipeline(StandardScaler(), LogisticRegressionCV(max_iter=1000))
-        time_decoding = SlidingEstimator(clf, n_jobs=5, scoring='accuracy')
-        
-        # Train decoder using cross-validation
-        split_scores = []  # Store majority vote accuracy for each split
-        for train_idx, test_idx in cv.split(X_train, y_train):
-            X_cv_train, X_cv_test = X_train[train_idx], X_train[test_idx]
-            y_cv_train, y_cv_test = y_train[train_idx], y_train[test_idx]
-            
-            # Fit SlidingEstimator
-            time_decoding.fit(X_cv_train, y_cv_train)
-            
-            # Predict on test set
-            y_pred = time_decoding.predict(X_cv_test)  # Shape: (n_samples, n_time_points)
-            
-            # Apply majority vote to reduce predictions across time points to a single label
-            y_pred_majority = np.apply_along_axis(lambda x: np.bincount(x).argmax(), axis=1, arr=y_pred)
-            
-            # Compute accuracy using majority vote
-            majority_vote_accuracy = accuracy_score(y_cv_test, y_pred_majority)
-            print(f"Majority vote accuracy for Sequence Index {seq_idx}: {majority_vote_accuracy}")
-            split_scores.append(majority_vote_accuracy)
-        
-        # Save the scores (one score per split)
-        majority_vote_scores[seq_idx] = np.array(split_scores)
-        print(f"Saved majority vote cross-validation scores for Sequence Index {seq_idx}. Shape: {majority_vote_scores[seq_idx].shape}")
-    else:
-        print(f"Skipping Sequence Index {seq_idx} (only one class present)")
-
-# Save the data for visualization or further analysis
-with open(f"output/{subj}/majority_vote_{subj}.pkl", "wb") as f:
-    pickle.dump(majority_vote_scores, f)
-
-print(f"Majority vote cross-validation scores saved to 'majority_vote_{subj}.pkl'.")
