@@ -19,7 +19,7 @@ from sklearn.linear_model import LogisticRegressionCV
 from sklearn.metrics import accuracy_score
 from scipy.ndimage import gaussian_filter1d
 import argparse
-from util import EventExtractor
+from utils import EventExtractor
 # Parse command-line arguments
 # parser = argparse.ArgumentParser(description='Process MEG data for a specific subject.')
 # parser.add_argument('--subject', type=str, required=True, help='Subject identifier')

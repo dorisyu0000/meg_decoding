@@ -17,7 +17,7 @@ from matplotlib import pyplot as plt
 label_encoder = LabelEncoder()
 from sklearn.linear_model import LogisticRegressionCV
 from sklearn.metrics import accuracy_score
-from util import EventExtractor
+from utils import EventExtractor
 from scipy.interpolate import interp1d
 import mne
 from mne.datasets import sample
